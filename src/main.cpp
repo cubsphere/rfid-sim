@@ -35,6 +35,7 @@ bool use_el = false;
 
 struct result
 {
+    long tags;
     long slots;
     long collisions;
     double efficiency;
@@ -44,7 +45,7 @@ struct result
 const static int EMPTY = 0;
 const static int SUCCESS = 1;
 
-void simulate(minstd_rand gen, function<int(int, int, int)> estimator, result *results)
+void simulate(minstd_rand gen, function<int(int, int, int)> estimator, vector<result> &results)
 {
     int iteration = 0;
     for (int tags = initial_tags; tags <= maximum; tags += step)
@@ -52,11 +53,12 @@ void simulate(minstd_rand gen, function<int(int, int, int)> estimator, result *r
         int remaining_tags = tags;
         vector<int> window(initial_window, 0);
 
+        results[iteration].tags = tags;
         results[iteration].slots = 0;
         results[iteration].collisions = 0;
 
         clock_t tStart = clock();
-        while (0 < remaining_tags)
+        while (1)
         {
             uniform_int_distribution<> dis(0, window.size() - 1);
             for (int i = 0; i < remaining_tags; ++i)
@@ -80,6 +82,10 @@ void simulate(minstd_rand gen, function<int(int, int, int)> estimator, result *r
             results[iteration].slots += window.size();
             results[iteration].collisions += collisions;
 
+            remaining_tags -= successes;
+            if(0 == remaining_tags)
+                break;
+
             int newsize = estimator(empties, successes, collisions);
 
             window.resize(newsize);
@@ -87,18 +93,11 @@ void simulate(minstd_rand gen, function<int(int, int, int)> estimator, result *r
             {
                 window[i] = 0;
             }
-
-            remaining_tags -= successes;
         }
         results[iteration].runtime = ((double)(clock() - tStart)) / (CLOCKS_PER_SEC / 1000);
         results[iteration].efficiency = ((double)tags) / results[iteration].slots;
         ++iteration;
     }
-}
-
-int coolestimator(int a, int b, int c)
-{
-    return 10;
 }
 
 int main(int argc, char **argv)
@@ -114,11 +113,12 @@ int main(int argc, char **argv)
         {"step", required_argument, 0, 's'},
         {"maximum", required_argument, 0, 'm'},
         {"estimator", required_argument, 0, 'e'},
+        {"all", required_argument, 0, 'a'},
         {"help", no_argument, 0, 'h'}};
 
     while (1)
     {
-        c = getopt_long(argc, argv, "w:t:r:s:m:e:h", long_options, &option_index);
+        c = getopt_long(argc, argv, "w:t:r:s:m:e:ah", long_options, &option_index);
 
         if (c == -1)
             break;
@@ -156,6 +156,10 @@ int main(int argc, char **argv)
             else if ((strcmp(optarg, "lb") == 0) | (strcmp(optarg, "lower-bound") == 0))
                 estimators.push_back(lwr_bound);
             break;
+
+        case 'a':
+            estimators.push_back(eom_lee);
+            estimators.push_back(lwr_bound);
 
         case 'h':
             print_help();
@@ -208,9 +212,12 @@ int main(int argc, char **argv)
     random_device rd;
     minstd_rand gen(rd());
     long iterations = 1 + (maximum - initial_tags) / step;
-    result results[iterations];
 
-    simulate(gen, coolestimator, results);
+    for(auto func : estimators)
+    {
+        vector<result> results(iterations);
+        simulate(gen, func, results);
+    }
 
     return 0;
 }
