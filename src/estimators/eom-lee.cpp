@@ -5,11 +5,14 @@ using namespace std;
 
 double computeB(double Y, int window_size, int successes, int collisions)
 {
-    return window_size / (Y * successes + collisions);
+    return window_size / (Y * collisions + successes);
 }
 
 double computeY(double B)
 {
+    if ((B == -INFINITY) | (B == INFINITY))
+        return -2;
+    
     double dividend = 1 - exp(-(1 / B));
     double divisor = B * (1 - (1 + 1 / B) * exp(-(1 / B)));
     return dividend / divisor;
@@ -31,5 +34,5 @@ int eom_lee(int empties, int successes, int collisions)
         Y = computeY(B);
     }
 
-    return ceil(Y) * max(1, successes);
+    return max(1, (int) ceil(Y) * collisions);
 }

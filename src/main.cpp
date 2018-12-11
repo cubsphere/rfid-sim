@@ -5,6 +5,7 @@
 #include <random>
 #include <ctime>
 #include <functional>
+#include <fstream>
 
 #include "eom-lee.hpp"
 #include "lwr-bound.hpp"
@@ -12,7 +13,19 @@
 using namespace std;
 
 bool help_printed = false;
-const char *helpful_string = "after reading this helpful string, you learn how to use this program properly.\n";
+const char *helpful_string = "rfid-sim [options]\n"
+                             "options:\n"
+                             "--window NUM or -w NUM: sets initial window size to NUM (default 64)\n"
+                             "--tags NUM or -t NUM: sets amount of tags present in the first step to NUM (default 100)\n"
+                             "--step NUM or -s NUM: sets amount of tags added per step to NUM (default 100)\n"
+                             "--repeat NUM or -r NUM: sets amount of time to simulate all estimators for each step to NUM (default 100)\n"
+                             "--maximum NUM or -m NUM: sets maximum amount of tags to NUM (default 1000)\n"
+                             "--estimator EST or -e EST: activates simulation of estimator EST (default none)\n"
+                             "available estimators are:\n"
+                             "eom-lee or el\n"
+                             "lower-bound or lb\n"
+                             "--all or -a: use all available estimators\n"
+                             "--help or -h: display this message\n";
 
 void print_help()
 {
@@ -23,86 +36,134 @@ void print_help()
     }
 }
 
-int initial_window, initial_tags, repeat, step, maximum;
-bool initial_window_defined = false,
-     initial_tags_defined = false,
-     repeat_defined = false,
-     step_defined = false,
-     maximum_defined = false;
+int initial_window = 64,
+    initial_tags = 100,
+    repeat = 20,
+    step = 100,
+    maximum = 1000;
 
 bool use_lb = false;
 bool use_el = false;
 
-struct result
+struct func_with_name
 {
-    long tags;
-    long slots;
-    long collisions;
-    double efficiency;
-    double runtime;
+    function<int(int, int, int)> func;
+    string name;
 };
+
+const static func_with_name eom_lee_fwn = {.func = eom_lee, .name = "eom-lee"};
+const static func_with_name lwr_bound_fwn = {.func = lwr_bound, .name = "lower-bound"};
 
 const static int EMPTY = 0;
 const static int SUCCESS = 1;
 
-void simulate(minstd_rand gen, function<int(int, int, int)> estimator, vector<result> &results)
+void simulate(minstd_rand gen,
+              function<int(int, int, int)> estimator,
+              vector<long> &vec_tags,
+              vector<long> &vec_slots,
+              vector<long> &vec_empties,
+              vector<long> &vec_collisions,
+              vector<double> &vec_efficiency,
+              vector<double> &vec_runtime)
 {
     int iteration = 0;
     for (int tags = initial_tags; tags <= maximum; tags += step)
     {
-        int remaining_tags = tags;
-        vector<int> window(initial_window, 0);
+        vec_tags[iteration] = tags;
+        vec_slots[iteration] = 0;
+        vec_empties[iteration] = 0;
+        vec_runtime[iteration] = 0;
+        vec_collisions[iteration] = 0;
 
-        results[iteration].tags = tags;
-        results[iteration].slots = 0;
-        results[iteration].collisions = 0;
-
-        clock_t tStart = clock();
-        while (1)
+        for (int r = 0; r < repeat; ++r)
         {
-            uniform_int_distribution<> dis(0, window.size() - 1);
-            for (int i = 0; i < remaining_tags; ++i)
+            vector<int> window(initial_window, 0);
+            int remaining_tags = tags;
+            double avg = 0;
+            int runs = 0;
+            while (1)
             {
-                window[dis(gen)] += 1;
+                uniform_int_distribution<> dis(0, window.size() - 1);
+                for (int i = 0; i < remaining_tags; ++i)
+                {
+                    window[dis(gen)] += 1;
+                }
+
+                int empties = 0;
+                int successes = 0;
+                int collisions = 0;
+                for (int i = 0; i < window.size(); ++i)
+                {
+                    if (window[i] == EMPTY)
+                        ++empties;
+                    else if (window[i] == SUCCESS)
+                        ++successes;
+                    else
+                        ++collisions;
+                }
+
+                vec_slots[iteration] += window.size();
+                vec_empties[iteration] += empties;
+                vec_collisions[iteration] += collisions;
+
+                remaining_tags -= successes;
+                if (0 == remaining_tags)
+                    break;
+
+                clock_t tStart = clock();
+                int newsize = estimator(empties, successes, collisions);
+                avg += ((double)(clock() - tStart)) / ((double)CLOCKS_PER_SEC / 1000000000);
+                ++runs;
+
+                window.resize(newsize);
+                for (int i = 0; i < window.size(); ++i)
+                {
+                    window[i] = 0;
+                }
             }
-
-            int empties = 0;
-            int successes = 0;
-            int collisions = 0;
-            for (int i = 0; i < window.size(); ++i)
-            {
-                if (window[i] == EMPTY)
-                    ++empties;
-                else if (window[i] == SUCCESS)
-                    ++successes;
-                else
-                    ++collisions;
-            }
-
-            results[iteration].slots += window.size();
-            results[iteration].collisions += collisions;
-
-            remaining_tags -= successes;
-            if(0 == remaining_tags)
-                break;
-
-            int newsize = estimator(empties, successes, collisions);
-
-            window.resize(newsize);
-            for (int i = 0; i < window.size(); ++i)
-            {
-                window[i] = 0;
-            }
+            vec_runtime[iteration] += avg / runs;
         }
-        results[iteration].runtime = ((double)(clock() - tStart)) / (CLOCKS_PER_SEC / 1000);
-        results[iteration].efficiency = ((double)tags) / results[iteration].slots;
+        vec_slots[iteration] /= repeat;
+        vec_empties[iteration] /= repeat;
+        vec_collisions[iteration] /= repeat;
+        vec_runtime[iteration] /= repeat;
+        vec_efficiency[iteration] = ((double)tags) / vec_slots[iteration];
         ++iteration;
     }
 }
 
+template <class T>
+void plot(ofstream &of,
+          string title,
+          string y_title,
+          vector<func_with_name> &estimators,
+          vector<vector<long>> &tags,
+          vector<vector<T>> &y_vec)
+{
+    for (int i = 0; i < estimators.size(); ++i)
+    {
+        of.open(title + "_" + estimators[i].name + ".dat",
+                ios::binary | ios::trunc);
+
+        for (int j = 0; j < tags[i].size(); ++j)
+        {
+            of << tags[i][j] << ' ' << y_vec[i][j] << '\n';
+        }
+        of.close();
+    }
+    string cmd = "gnuplot -e \"set grid;set terminal png size 800,600;set key fixed left top vertical Right noreverse enhanced autotitle box lt black linewidth 1.000 dashtype solid;set style data linespoints;set xlabel 'tags';";
+    cmd += "set ylabel '" + y_title + "';set output '" + title + ".png';";
+    cmd += "plot ";
+    for (auto fwn : estimators)
+        cmd += "'" + title + "_" + fwn.name + ".dat' title '" + fwn.name + "',"s;
+    cmd += "\"";
+
+    int _ = system(cmd.c_str());
+}
+
 int main(int argc, char **argv)
 {
-    vector<function<int(int, int, int)>> estimators;
+    vector<func_with_name> estimators;
 
     int c;
     int option_index = 0;
@@ -127,43 +188,39 @@ int main(int argc, char **argv)
         {
         case 'w':
             initial_window = stoi(optarg);
-            initial_window_defined = true;
             break;
 
         case 't':
             initial_tags = stoi(optarg);
-            initial_tags_defined = true;
             break;
 
         case 'r':
             repeat = stoi(optarg);
-            repeat_defined = true;
             break;
 
         case 's':
             step = stoi(optarg);
-            step_defined = true;
             break;
 
         case 'm':
             maximum = stoi(optarg);
-            maximum_defined = true;
             break;
 
         case 'e':
             if ((strcmp(optarg, "el") == 0) | (strcmp(optarg, "eom-lee") == 0))
-                estimators.push_back(eom_lee);
+                estimators.push_back(eom_lee_fwn);
             else if ((strcmp(optarg, "lb") == 0) | (strcmp(optarg, "lower-bound") == 0))
-                estimators.push_back(lwr_bound);
+                estimators.push_back(lwr_bound_fwn);
             break;
 
         case 'a':
-            estimators.push_back(eom_lee);
-            estimators.push_back(lwr_bound);
+            estimators.push_back(eom_lee_fwn);
+            estimators.push_back(lwr_bound_fwn);
+            break;
 
         case 'h':
             print_help();
-            break;
+            return 2;
 
         case '?':
         default:
@@ -173,34 +230,8 @@ int main(int argc, char **argv)
 
     if (argc == 1)
     {
-        cout << helpful_string;
+        print_help();
         return 2;
-    }
-
-    if (!initial_window_defined)
-    {
-        cout << "initial window size must be defined with '--window window_size' or '-w window_size'\ne.g. '-w 10'";
-        return 3;
-    }
-    else if (!initial_tags_defined)
-    {
-        cout << "initial tag amount must be defined with '--tags tag_amount' or '-t tag_amount'\ne.g. '-t 10'";
-        return 4;
-    }
-    else if (!repeat_defined)
-    {
-        cout << "repeated runs for each tag amount must be defined with '--repeat repeats_num' or '-r repeats_num'\ne.g. '-r 1'";
-        return 5;
-    }
-    else if (!step_defined)
-    {
-        cout << "tag increment amount must be defined with '--step increment' or '-s increment'\ne.g. '-s 5'";
-        return 6;
-    }
-    else if (!maximum_defined)
-    {
-        cout << "maximum tags undefined - using default value of ((initial_tags) + (tag_increment * 10))\n";
-        maximum = initial_tags + step * 10;
     }
 
     if (maximum < initial_tags)
@@ -213,11 +244,24 @@ int main(int argc, char **argv)
     minstd_rand gen(rd());
     long iterations = 1 + (maximum - initial_tags) / step;
 
-    for(auto func : estimators)
+    vector<vector<long>> tags(estimators.size(), vector<long>(iterations));
+    vector<vector<long>> slots(estimators.size(), vector<long>(iterations));
+    vector<vector<long>> empties(estimators.size(), vector<long>(iterations));
+    vector<vector<long>> collisions(estimators.size(), vector<long>(iterations));
+    vector<vector<double>> efficiency(estimators.size(), vector<double>(iterations));
+    vector<vector<double>> runtime(estimators.size(), vector<double>(iterations));
+
+    for (int i = 0; i < estimators.size(); ++i)
     {
-        vector<result> results(iterations);
-        simulate(gen, func, results);
+        simulate(gen, estimators[i].func, tags[i], slots[i], empties[i], collisions[i], efficiency[i], runtime[i]);
     }
+
+    ofstream of;
+    plot<long>(of, "total_slots", "total slots", estimators, tags, slots);
+    plot<long>(of, "emtpy_slots", "empty slots", estimators, tags, empties);
+    plot<long>(of, "collisions", "collisions", estimators, tags, collisions);
+    plot<double>(of, "efficiency", "efficiency", estimators, tags, efficiency);
+    plot<double>(of, "runtime", "runtime (ns)", estimators, tags, runtime);
 
     return 0;
 }
