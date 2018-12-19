@@ -147,7 +147,9 @@ void plot(ofstream &of,
           string y_title,
           vector<func_with_name> &estimators,
           vector<vector<long>> &tags,
-          vector<vector<T>> &y_vec)
+          vector<vector<T>> &y_vec,
+          bool use_log = false,
+          bool scale_from_0 = false)
 {
     for (int i = 0; i < estimators.size(); ++i)
     {
@@ -162,6 +164,11 @@ void plot(ofstream &of,
     }
     string cmd = "gnuplot -e \"set grid;set terminal png size 800,600;set key fixed left top vertical Right noreverse enhanced autotitle box lt black linewidth 1.000 dashtype solid;set style data linespoints;set xlabel 'tags';";
     cmd += "set ylabel '" + y_title + "';set output '" + title + ".png';";
+    if(use_log)
+        cmd += "set logscale y 10;";
+    if(scale_from_0)
+        cmd += "set yrange [0:*];";
+
     cmd += "plot ";
     for (auto fwn : estimators)
         cmd += "'" + title + "_" + fwn.name + ".dat' title '" + fwn.name + "',"s;
@@ -175,6 +182,7 @@ int main(int argc, char **argv)
     vector<func_with_name> estimators;
 
     int c;
+    bool using_chen = 0;
     int option_index = 0;
     static struct option long_options[] = {
         {"window", required_argument, 0, 'w'},
@@ -221,7 +229,10 @@ int main(int argc, char **argv)
             else if ((strcmp(optarg, "lb") == 0) | (strcmp(optarg, "lower-bound") == 0))
                 estimators.push_back(lwr_bound_fwn);
             else if ((strcmp(optarg, "ch") == 0) | (strcmp(optarg, "chen") == 0))
+            {
                 estimators.push_back(chen_fwn);
+                using_chen = true;
+            }
             else if ((strcmp(optarg, "ch2") == 0) | (strcmp(optarg, "chen-epsilon-2") == 0))
                 estimators.push_back(chen_fwn);
             else if ((strcmp(optarg, "ch5") == 0) | (strcmp(optarg, "chen-epsilon-5") == 0))
@@ -232,6 +243,7 @@ int main(int argc, char **argv)
             estimators.push_back(eom_lee_fwn);
             estimators.push_back(lwr_bound_fwn);
             estimators.push_back(chen_fwn);
+            using_chen = true;
             estimators.push_back(chen_fwn1);
             estimators.push_back(chen_fwn2);
             break;
@@ -278,8 +290,8 @@ int main(int argc, char **argv)
     plot<long>(of, "total_slots", "total slots", estimators, tags, slots);
     plot<long>(of, "emtpy_slots", "empty slots", estimators, tags, empties);
     plot<long>(of, "collisions", "collisions", estimators, tags, collisions);
-    plot<long double>(of, "efficiency", "efficiency", estimators, tags, efficiency);
-    plot<long double>(of, "runtime", "runtime (ns)", estimators, tags, runtime);
+    plot<long double>(of, "efficiency", "efficiency", estimators, tags, efficiency, false, true);
+    plot<long double>(of, "runtime", "runtime (ns)", estimators, tags, runtime, using_chen, true);
 
     return 0;
 }
