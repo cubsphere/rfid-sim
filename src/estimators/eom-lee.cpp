@@ -3,30 +3,30 @@
 
 using namespace std;
 
-double computeB(double Y, int window_size, int successes, int collisions)
+long double computeB(long double Y, int window_size, int successes, int collisions)
 {
     return window_size / (Y * collisions + successes);
 }
 
-double computeY(double B)
+long double computeY(long double B)
 {
     if ((B == -INFINITY) | (B == INFINITY))
         return -2;
     
-    double dividend = 1 - exp(-(1 / B));
-    double divisor = B * (1 - (1 + 1 / B) * exp(-(1 / B)));
+    long double dividend = 1 - exp(-(1 / B));
+    long double divisor = B * (1 - (1 + 1 / B) * exp(-(1 / B)));
     return dividend / divisor;
 }
 
-static const double epsilon = 0.00390625;
+static const long double epsilon = 0.00390625;
 
 int eom_lee(int empties, int successes, int collisions)
 {
     int window_size = empties + successes + collisions;
-    double prevY = -2;
+    long double prevY = -2;
 
-    double B = computeB(prevY, window_size, successes, collisions);
-    double Y = computeY(B);
+    long double B = computeB(prevY, window_size, successes, collisions);
+    long double Y = computeY(B);
     while (epsilon < abs(Y - prevY))
     {
         prevY = Y;

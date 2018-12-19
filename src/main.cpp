@@ -9,6 +9,9 @@
 
 #include "eom-lee.hpp"
 #include "lwr-bound.hpp"
+#include "chen.hpp"
+#include "chen1.hpp"
+#include "chen2.hpp"
 
 using namespace std;
 
@@ -24,6 +27,9 @@ const char *helpful_string = "rfid-sim [options]\n"
                              "available estimators are:\n"
                              "eom-lee or el\n"
                              "lower-bound or lb\n"
+                             "chen or ch\n"
+                             "chen-epsilon-2 or ch2\n"
+                             "chen-epsilon-5 or ch5\n"
                              "--all or -a: use all available estimators\n"
                              "--help or -h: display this message\n";
 
@@ -53,6 +59,9 @@ struct func_with_name
 
 const static func_with_name eom_lee_fwn = {.func = eom_lee, .name = "eom-lee"};
 const static func_with_name lwr_bound_fwn = {.func = lwr_bound, .name = "lower-bound"};
+const static func_with_name chen_fwn = {.func = chen, .name = "chen"};
+const static func_with_name chen_fwn1 = {.func = chen1, .name = "chen-eps-5"};
+const static func_with_name chen_fwn2 = {.func = chen2, .name = "chen-eps-2"};
 
 const static int EMPTY = 0;
 const static int SUCCESS = 1;
@@ -63,8 +72,8 @@ void simulate(minstd_rand gen,
               vector<long> &vec_slots,
               vector<long> &vec_empties,
               vector<long> &vec_collisions,
-              vector<double> &vec_efficiency,
-              vector<double> &vec_runtime)
+              vector<long double> &vec_efficiency,
+              vector<long double> &vec_runtime)
 {
     int iteration = 0;
     for (int tags = initial_tags; tags <= maximum; tags += step)
@@ -79,7 +88,7 @@ void simulate(minstd_rand gen,
         {
             vector<int> window(initial_window, 0);
             int remaining_tags = tags;
-            double avg = 0;
+            long double avg = 0;
             int runs = 0;
             while (1)
             {
@@ -112,7 +121,7 @@ void simulate(minstd_rand gen,
 
                 clock_t tStart = clock();
                 int newsize = estimator(empties, successes, collisions);
-                avg += ((double)(clock() - tStart)) / ((double)CLOCKS_PER_SEC / 1000000000);
+                avg += ((long double)(clock() - tStart)) / ((long double)CLOCKS_PER_SEC / 1000000000);
                 ++runs;
 
                 window.resize(newsize);
@@ -127,7 +136,7 @@ void simulate(minstd_rand gen,
         vec_empties[iteration] /= repeat;
         vec_collisions[iteration] /= repeat;
         vec_runtime[iteration] /= repeat;
-        vec_efficiency[iteration] = ((double)tags) / vec_slots[iteration];
+        vec_efficiency[iteration] = ((long double)tags) / vec_slots[iteration];
         ++iteration;
     }
 }
@@ -211,11 +220,20 @@ int main(int argc, char **argv)
                 estimators.push_back(eom_lee_fwn);
             else if ((strcmp(optarg, "lb") == 0) | (strcmp(optarg, "lower-bound") == 0))
                 estimators.push_back(lwr_bound_fwn);
+            else if ((strcmp(optarg, "ch") == 0) | (strcmp(optarg, "chen") == 0))
+                estimators.push_back(chen_fwn);
+            else if ((strcmp(optarg, "ch2") == 0) | (strcmp(optarg, "chen-epsilon-2") == 0))
+                estimators.push_back(chen_fwn);
+            else if ((strcmp(optarg, "ch5") == 0) | (strcmp(optarg, "chen-epsilon-5") == 0))
+                estimators.push_back(chen_fwn);
             break;
 
         case 'a':
             estimators.push_back(eom_lee_fwn);
             estimators.push_back(lwr_bound_fwn);
+            estimators.push_back(chen_fwn);
+            estimators.push_back(chen_fwn1);
+            estimators.push_back(chen_fwn2);
             break;
 
         case 'h':
@@ -248,8 +266,8 @@ int main(int argc, char **argv)
     vector<vector<long>> slots(estimators.size(), vector<long>(iterations));
     vector<vector<long>> empties(estimators.size(), vector<long>(iterations));
     vector<vector<long>> collisions(estimators.size(), vector<long>(iterations));
-    vector<vector<double>> efficiency(estimators.size(), vector<double>(iterations));
-    vector<vector<double>> runtime(estimators.size(), vector<double>(iterations));
+    vector<vector<long double>> efficiency(estimators.size(), vector<long double>(iterations));
+    vector<vector<long double>> runtime(estimators.size(), vector<long double>(iterations));
 
     for (int i = 0; i < estimators.size(); ++i)
     {
@@ -260,8 +278,8 @@ int main(int argc, char **argv)
     plot<long>(of, "total_slots", "total slots", estimators, tags, slots);
     plot<long>(of, "emtpy_slots", "empty slots", estimators, tags, empties);
     plot<long>(of, "collisions", "collisions", estimators, tags, collisions);
-    plot<double>(of, "efficiency", "efficiency", estimators, tags, efficiency);
-    plot<double>(of, "runtime", "runtime (ns)", estimators, tags, runtime);
+    plot<long double>(of, "efficiency", "efficiency", estimators, tags, efficiency);
+    plot<long double>(of, "runtime", "runtime (ns)", estimators, tags, runtime);
 
     return 0;
 }
