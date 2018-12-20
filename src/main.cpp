@@ -66,7 +66,7 @@ const static func_with_name chen_fwn2 = {.func = chen2, .name = "chen-eps-2"};
 const static int EMPTY = 0;
 const static int SUCCESS = 1;
 
-void simulate(minstd_rand gen,
+void simulate(mt19937_64 gen,
               function<int(int, int, int)> estimator,
               vector<long> &vec_tags,
               vector<long> &vec_slots,
@@ -271,7 +271,7 @@ int main(int argc, char **argv)
     }
 
     random_device rd;
-    minstd_rand gen(rd());
+    mt19937_64 gen(rd());
     long iterations = 1 + (maximum - initial_tags) / step;
 
     vector<vector<long>> tags(estimators.size(), vector<long>(iterations));
