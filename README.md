@@ -1,6 +1,7 @@
 this program runs a minimalistic simulation of various RFID tag amount and window size estimators, plotting and storing data from the simulations.
 
-requires gnuplot to be installed and visible by this program's executable: ```shell
+requires gnuplot to be installed and visible by this program's executable:
+```shell
 sudo apt-get install gnuplot
 ``` 
 
